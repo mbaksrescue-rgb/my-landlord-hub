@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   ChartBar,
+  Headphones,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -27,6 +28,13 @@ const adminNavItems = [
   { icon: Settings, label: 'Settings', path: '/admin/settings' },
 ];
 
+const caretakerNavItems = [
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/caretaker' },
+  { icon: Users, label: 'Tenants', path: '/caretaker/tenants' },
+  { icon: Headphones, label: 'Tenant Assist', path: '/caretaker/assist' },
+  { icon: Wrench, label: 'Maintenance', path: '/caretaker/maintenance' },
+];
+
 const tenantNavItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/tenant' },
   { icon: CreditCard, label: 'Payments', path: '/tenant/payments' },
@@ -38,7 +46,11 @@ export function Sidebar() {
   const location = useLocation();
   const { role, signOut, user } = useAuth();
 
-  const navItems = role === 'admin' ? adminNavItems : tenantNavItems;
+  const navItems = role === 'admin' 
+    ? adminNavItems 
+    : role === 'caretaker' 
+      ? caretakerNavItems 
+      : tenantNavItems;
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-sidebar">
@@ -46,7 +58,7 @@ export function Sidebar() {
         {/* Logo */}
         <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-6">
           <Building2 className="h-8 w-8 text-sidebar-primary" />
-          <span className="text-lg font-bold text-sidebar-foreground">RentFlow</span>
+          <span className="text-lg font-bold text-sidebar-foreground">Musembi PM</span>
         </div>
 
         {/* Navigation */}
