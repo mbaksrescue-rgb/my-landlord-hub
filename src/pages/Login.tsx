@@ -52,9 +52,9 @@ export default function Login() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <Building2 className="h-8 w-8 text-primary" />
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome to RentFlow</CardTitle>
+          <CardTitle className="text-2xl font-bold">Musembi Property Management</CardTitle>
           <CardDescription>
-            Sign in to manage your rental properties
+            Sign in to access your account
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { FullPageLoader } from "@/components/ui/loading-spinner";
 
 // Pages
 import Login from "@/pages/Login";
@@ -26,18 +27,29 @@ import TenantPayments from "@/pages/tenant/Payments";
 import TenantLease from "@/pages/tenant/Lease";
 import TenantMaintenance from "@/pages/tenant/Maintenance";
 
-const queryClient = new QueryClient();
+// Caretaker Pages
+import CaretakerDashboard from "@/pages/caretaker/Dashboard";
+import CaretakerTenants from "@/pages/caretaker/Tenants";
+import TenantAssist from "@/pages/caretaker/TenantAssist";
+import CaretakerMaintenance from "@/pages/caretaker/Maintenance";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 2, // 2 minutes
+      gcTime: 1000 * 60 * 5, // 5 minutes (formerly cacheTime)
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Protected Route Component
-function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'tenant')[] }) {
+function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'tenant' | 'caretaker')[] }) {
   const { user, role, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <FullPageLoader />;
   }
 
   if (!user) {
@@ -46,7 +58,9 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
   if (role && !allowedRoles.includes(role)) {
     // Redirect to appropriate dashboard
-    return <Navigate to={role === 'admin' ? '/admin' : '/tenant'} replace />;
+    if (role === 'admin') return <Navigate to="/admin" replace />;
+    if (role === 'caretaker') return <Navigate to="/caretaker" replace />;
+    return <Navigate to="/tenant" replace />;
   }
 
   return <>{children}</>;
@@ -57,15 +71,11 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   const { user, role, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <FullPageLoader />;
   }
 
   if (user && role) {
-    return <Navigate to={role === 'admin' ? '/admin' : '/tenant'} replace />;
+    return <Navigate to={role === 'admin' ? '/admin' : role === 'caretaker' ? '/caretaker' : '/tenant'} replace />;
   }
 
   return <>{children}</>;
@@ -76,18 +86,16 @@ function RootRedirect() {
   const { user, role, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <FullPageLoader />;
   }
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  return <Navigate to={role === 'admin' ? '/admin' : '/tenant'} replace />;
+  if (role === 'admin') return <Navigate to="/admin" replace />;
+  if (role === 'caretaker') return <Navigate to="/caretaker" replace />;
+  return <Navigate to="/tenant" replace />;
 }
 
 function AppRoutes() {
@@ -115,6 +123,12 @@ function AppRoutes() {
       <Route path="/tenant/payments" element={<ProtectedRoute allowedRoles={['tenant']}><TenantPayments /></ProtectedRoute>} />
       <Route path="/tenant/lease" element={<ProtectedRoute allowedRoles={['tenant']}><TenantLease /></ProtectedRoute>} />
       <Route path="/tenant/maintenance" element={<ProtectedRoute allowedRoles={['tenant']}><TenantMaintenance /></ProtectedRoute>} />
+
+      {/* Caretaker Routes */}
+      <Route path="/caretaker" element={<ProtectedRoute allowedRoles={['caretaker']}><CaretakerDashboard /></ProtectedRoute>} />
+      <Route path="/caretaker/tenants" element={<ProtectedRoute allowedRoles={['caretaker']}><CaretakerTenants /></ProtectedRoute>} />
+      <Route path="/caretaker/assist" element={<ProtectedRoute allowedRoles={['caretaker']}><TenantAssist /></ProtectedRoute>} />
+      <Route path="/caretaker/maintenance" element={<ProtectedRoute allowedRoles={['caretaker']}><CaretakerMaintenance /></ProtectedRoute>} />
 
       {/* Catch-all */}
       <Route path="*" element={<NotFound />} />

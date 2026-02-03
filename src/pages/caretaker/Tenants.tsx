@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/format';
-import { Plus, Pencil, Trash2, Users, Eye, EyeOff } from 'lucide-react';
+import { Plus, Users, Eye, EyeOff, Phone, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,16 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -56,12 +46,11 @@ interface TenantFormData {
   move_in_date: string;
 }
 
-export default function Tenants() {
+export default function CaretakerTenants() {
   const { data: tenants, isLoading } = useTenants();
   const { data: units } = useUnits();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<TenantFormData>({
@@ -126,46 +115,12 @@ export default function Tenants() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteId) return;
-
-    try {
-      // Find the tenant to get the user_id
-      const tenant = tenants?.find((t: any) => t.id === deleteId);
-      if (!tenant) throw new Error('Tenant not found');
-
-      // Update unit status back to vacant if tenant had a unit
-      if (tenant.unit_id) {
-        await supabase
-          .from('units')
-          .update({ status: 'vacant' })
-          .eq('id', tenant.unit_id);
-      }
-
-      // Delete the auth user (this will cascade delete profile, tenant, etc.)
-      const { error } = await supabase.auth.admin.deleteUser(tenant.user_id);
-      if (error) {
-        // If admin delete fails, just delete the tenant record
-        await supabase.from('tenants').delete().eq('id', deleteId);
-      }
-
-      toast.success('Tenant deleted successfully');
-      queryClient.invalidateQueries({ queryKey: ['tenants'] });
-      queryClient.invalidateQueries({ queryKey: ['units'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setDeleteId(null);
-    }
-  };
-
   return (
     <DashboardLayout>
       <div className="flex items-center justify-between mb-8">
         <div className="page-header mb-0">
           <h1 className="page-title">Tenants</h1>
-          <p className="page-description">Manage tenant accounts and assignments</p>
+          <p className="page-description">Add and manage tenants</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
@@ -221,6 +176,9 @@ export default function Tenants() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Share this password with the tenant so they can sign in
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -296,7 +254,7 @@ export default function Tenants() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 space-y-4">
-              {[...Array(3)].map((_, i) => (
+              {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-16" />
               ))}
             </div>
@@ -317,7 +275,6 @@ export default function Tenants() {
                   <TableHead>Contact</TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead>Move-in Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,9 +284,17 @@ export default function Tenants() {
                       {tenant.profile?.full_name || 'N/A'}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">
-                        <p>{tenant.profile?.email}</p>
-                        <p className="text-muted-foreground">{tenant.profile?.phone}</p>
+                      <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex items-center gap-1">
+                          <Mail className="h-3 w-3 text-muted-foreground" />
+                          {tenant.profile?.email}
+                        </div>
+                        {tenant.profile?.phone && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            {tenant.profile.phone}
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -344,15 +309,6 @@ export default function Tenants() {
                     <TableCell>
                       {tenant.move_in_date ? formatDate(tenant.move_in_date) : '-'}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteId(tenant.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -360,27 +316,6 @@ export default function Tenants() {
           )}
         </CardContent>
       </Card>
-
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Tenant</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this tenant account and all associated data.
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </DashboardLayout>
   );
 }

@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
+// Optimized query options for faster perceived loading
+const fastQueryOptions = {
+  staleTime: 1000 * 60 * 2, // 2 minutes
+  gcTime: 1000 * 60 * 5, // 5 minutes
+};
+
 export function useProperties() {
   return useQuery({
     queryKey: ['properties'],
@@ -12,6 +18,7 @@ export function useProperties() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -35,6 +42,7 @@ export function useUnits(propertyId?: string) {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -53,6 +61,7 @@ export function useTenants() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -71,6 +80,7 @@ export function useLeases() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -89,6 +99,7 @@ export function useRentRecords() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -107,6 +118,7 @@ export function usePayments() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -125,6 +137,7 @@ export function useMaintenanceRequests() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -132,40 +145,32 @@ export function useDashboardStats() {
   return useQuery({
     queryKey: ['dashboard_stats'],
     queryFn: async () => {
-      // Get properties count
-      const { count: propertiesCount } = await supabase
-        .from('properties')
-        .select('*', { count: 'exact', head: true });
+      // Run all queries in parallel for faster loading
+      const [
+        propertiesResult,
+        unitsResult,
+        rentRecordsResult,
+        maintenanceResult,
+      ] = await Promise.all([
+        supabase.from('properties').select('*', { count: 'exact', head: true }),
+        supabase.from('units').select('status'),
+        supabase.from('rent_records').select('amount_due, amount_paid, status').eq('month_year', new Date().toISOString().slice(0, 7)),
+        supabase.from('maintenance_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      ]);
 
-      // Get units by status
-      const { data: units } = await supabase
-        .from('units')
-        .select('status');
+      const units = unitsResult.data || [];
+      const totalUnits = units.length;
+      const occupiedUnits = units.filter(u => u.status === 'occupied').length;
+      const vacantUnits = units.filter(u => u.status === 'vacant').length;
+      const maintenanceUnits = units.filter(u => u.status === 'maintenance').length;
 
-      const totalUnits = units?.length || 0;
-      const occupiedUnits = units?.filter(u => u.status === 'occupied').length || 0;
-      const vacantUnits = units?.filter(u => u.status === 'vacant').length || 0;
-      const maintenanceUnits = units?.filter(u => u.status === 'maintenance').length || 0;
-
-      // Get current month rent collection
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const { data: rentRecords } = await supabase
-        .from('rent_records')
-        .select('amount_due, amount_paid, status')
-        .eq('month_year', currentMonth);
-
-      const totalRentDue = rentRecords?.reduce((sum, r) => sum + Number(r.amount_due), 0) || 0;
-      const totalRentCollected = rentRecords?.reduce((sum, r) => sum + Number(r.amount_paid), 0) || 0;
+      const rentRecords = rentRecordsResult.data || [];
+      const totalRentDue = rentRecords.reduce((sum, r) => sum + Number(r.amount_due), 0);
+      const totalRentCollected = rentRecords.reduce((sum, r) => sum + Number(r.amount_paid), 0);
       const outstandingBalance = totalRentDue - totalRentCollected;
 
-      // Get pending maintenance requests
-      const { count: pendingMaintenance } = await supabase
-        .from('maintenance_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
-
       return {
-        propertiesCount: propertiesCount || 0,
+        propertiesCount: propertiesResult.count || 0,
         totalUnits,
         occupiedUnits,
         vacantUnits,
@@ -173,9 +178,10 @@ export function useDashboardStats() {
         totalRentDue,
         totalRentCollected,
         outstandingBalance,
-        pendingMaintenance: pendingMaintenance || 0,
+        pendingMaintenance: maintenanceResult.count || 0,
       };
     },
+    ...fastQueryOptions,
   });
 }
 
@@ -190,5 +196,6 @@ export function useSystemSettings() {
       if (error) throw error;
       return data;
     },
+    ...fastQueryOptions,
   });
 }
