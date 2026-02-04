@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 
     console.log('User created:', authData.user.id)
 
-    // Create profile
+    // Create profile with must_change_password flag
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
@@ -105,6 +105,7 @@ Deno.serve(async (req) => {
         phone: body.phone || null,
         national_id: body.national_id || null,
         next_of_kin: body.next_of_kin || null,
+        must_change_password: true, // Force password change on first login
       })
 
     if (profileError) {

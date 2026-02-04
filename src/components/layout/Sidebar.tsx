@@ -13,6 +13,7 @@ import {
   LogOut,
   ChartBar,
   Headphones,
+  Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -25,6 +26,7 @@ const adminNavItems = [
   { icon: CreditCard, label: 'Payments', path: '/admin/payments' },
   { icon: Wrench, label: 'Maintenance', path: '/admin/maintenance' },
   { icon: ChartBar, label: 'Reports', path: '/admin/reports' },
+  { icon: Activity, label: 'Activity Logs', path: '/admin/activity' },
   { icon: Settings, label: 'Settings', path: '/admin/settings' },
 ];
 

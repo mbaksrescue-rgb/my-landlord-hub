@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      caretaker_permissions: {
+        Row: {
+          can_add_tenants: boolean
+          can_assign_units: boolean
+          can_end_leases: boolean
+          can_view_balances: boolean
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_add_tenants?: boolean
+          can_assign_units?: boolean
+          can_end_leases?: boolean
+          can_view_balances?: boolean
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_add_tenants?: boolean
+          can_assign_units?: boolean
+          can_end_leases?: boolean
+          can_view_balances?: boolean
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       leases: {
         Row: {
           created_at: string
@@ -119,6 +185,99 @@ export type Database = {
           },
         ]
       }
+      mpesa_transactions: {
+        Row: {
+          account_number: string
+          amount: number
+          created_at: string
+          error_message: string | null
+          id: string
+          matched: boolean
+          phone_number: string
+          processed_at: string | null
+          raw_payload: Json | null
+          rent_record_id: string | null
+          status: string
+          tenant_id: string | null
+          transaction_date: string
+          transaction_id: string
+        }
+        Insert: {
+          account_number: string
+          amount: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          matched?: boolean
+          phone_number: string
+          processed_at?: string | null
+          raw_payload?: Json | null
+          rent_record_id?: string | null
+          status?: string
+          tenant_id?: string | null
+          transaction_date: string
+          transaction_id: string
+        }
+        Update: {
+          account_number?: string
+          amount?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          matched?: boolean
+          phone_number?: string
+          processed_at?: string | null
+          raw_payload?: Json | null
+          rent_record_id?: string | null
+          status?: string
+          tenant_id?: string | null
+          transaction_date?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mpesa_transactions_rent_record_id_fkey"
+            columns: ["rent_record_id"]
+            isOneToOne: false
+            referencedRelation: "rent_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mpesa_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      password_reset_tokens: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          token: string
+          used: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          token: string
+          used?: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token?: string
+          used?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number
@@ -176,6 +335,7 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          must_change_password: boolean
           national_id: string | null
           next_of_kin: string | null
           phone: string | null
@@ -186,6 +346,7 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          must_change_password?: boolean
           national_id?: string | null
           next_of_kin?: string | null
           phone?: string | null
@@ -196,6 +357,7 @@ export type Database = {
           email?: string
           full_name?: string
           id?: string
+          must_change_password?: boolean
           national_id?: string | null
           next_of_kin?: string | null
           phone?: string | null
@@ -288,25 +450,46 @@ export type Database = {
         Row: {
           created_at: string
           currency: string
+          email_enabled: boolean
           id: string
+          late_fee_enabled: boolean
           late_payment_penalty: number
+          mpesa_consumer_key: string | null
+          mpesa_consumer_secret: string | null
+          mpesa_paybill: string | null
           rent_due_day: number
+          session_timeout_minutes: number
+          sms_enabled: boolean
           updated_at: string
         }
         Insert: {
           created_at?: string
           currency?: string
+          email_enabled?: boolean
           id?: string
+          late_fee_enabled?: boolean
           late_payment_penalty?: number
+          mpesa_consumer_key?: string | null
+          mpesa_consumer_secret?: string | null
+          mpesa_paybill?: string | null
           rent_due_day?: number
+          session_timeout_minutes?: number
+          sms_enabled?: boolean
           updated_at?: string
         }
         Update: {
           created_at?: string
           currency?: string
+          email_enabled?: boolean
           id?: string
+          late_fee_enabled?: boolean
           late_payment_penalty?: number
+          mpesa_consumer_key?: string | null
+          mpesa_consumer_secret?: string | null
+          mpesa_paybill?: string | null
           rent_due_day?: number
+          session_timeout_minutes?: number
+          sms_enabled?: boolean
           updated_at?: string
         }
         Relationships: []

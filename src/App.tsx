@@ -5,10 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { FullPageLoader } from "@/components/ui/loading-spinner";
+import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 
 // Pages
 import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
+import ChangePassword from "@/pages/ChangePassword";
 
 // Admin Pages
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -19,6 +23,7 @@ import Leases from "@/pages/admin/Leases";
 import AdminPayments from "@/pages/admin/Payments";
 import AdminMaintenance from "@/pages/admin/Maintenance";
 import Reports from "@/pages/admin/Reports";
+import ActivityLogs from "@/pages/admin/ActivityLogs";
 import Settings from "@/pages/admin/Settings";
 
 // Tenant Pages
@@ -37,7 +42,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 2, // 2 minutes
-      gcTime: 1000 * 60 * 5, // 5 minutes (formerly cacheTime)
+      gcTime: 1000 * 60 * 5, // 5 minutes
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -46,7 +51,10 @@ const queryClient = new QueryClient({
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'tenant' | 'caretaker')[] }) {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading, mustChangePassword } = useAuth();
+  
+  // Enable session timeout for protected routes
+  useSessionTimeout({ enabled: true });
 
   if (loading) {
     return <FullPageLoader />;
@@ -54,6 +62,11 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Force password change if required
+  if (mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (role && !allowedRoles.includes(role)) {
@@ -68,14 +81,19 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
 // Auth Route - redirects authenticated users to their dashboard
 function AuthRoute({ children }: { children: React.ReactNode }) {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading, mustChangePassword } = useAuth();
 
   if (loading) {
     return <FullPageLoader />;
   }
 
-  if (user && role) {
-    return <Navigate to={role === 'admin' ? '/admin' : role === 'caretaker' ? '/caretaker' : '/tenant'} replace />;
+  if (user) {
+    if (mustChangePassword) {
+      return <Navigate to="/change-password" replace />;
+    }
+    if (role) {
+      return <Navigate to={role === 'admin' ? '/admin' : role === 'caretaker' ? '/caretaker' : '/tenant'} replace />;
+    }
   }
 
   return <>{children}</>;
@@ -83,7 +101,7 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 
 // Root redirect based on role
 function RootRedirect() {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading, mustChangePassword } = useAuth();
 
   if (loading) {
     return <FullPageLoader />;
@@ -91,6 +109,10 @@ function RootRedirect() {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (role === 'admin') return <Navigate to="/admin" replace />;
@@ -106,6 +128,9 @@ function AppRoutes() {
       
       {/* Auth */}
       <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/change-password" element={<ChangePassword />} />
 
       {/* Admin Routes */}
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
@@ -116,6 +141,7 @@ function AppRoutes() {
       <Route path="/admin/payments" element={<ProtectedRoute allowedRoles={['admin']}><AdminPayments /></ProtectedRoute>} />
       <Route path="/admin/maintenance" element={<ProtectedRoute allowedRoles={['admin']}><AdminMaintenance /></ProtectedRoute>} />
       <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={['admin']}><Reports /></ProtectedRoute>} />
+      <Route path="/admin/activity" element={<ProtectedRoute allowedRoles={['admin']}><ActivityLogs /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['admin']}><Settings /></ProtectedRoute>} />
 
       {/* Tenant Routes */}

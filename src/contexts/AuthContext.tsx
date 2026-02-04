@@ -9,6 +9,7 @@ interface AuthContextType {
   session: Session | null;
   role: UserRole;
   loading: boolean;
+  mustChangePassword: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<UserRole>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,13 +30,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         
-        // Defer role fetching
+        // Defer role and profile fetching
         if (session?.user) {
           setTimeout(() => {
-            fetchUserRole(session.user.id);
+            fetchUserData(session.user.id);
           }, 0);
         } else {
           setRole(null);
+          setMustChangePassword(false);
           setLoading(false);
         }
       }
@@ -45,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchUserRole(session.user.id);
+        fetchUserData(session.user.id);
       } else {
         setLoading(false);
       }
@@ -54,23 +57,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserRole = async (userId: string) => {
+  const fetchUserData = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
+      // Fetch role and profile in parallel
+      const [roleResult, profileResult] = await Promise.all([
+        supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId)
+          .single(),
+        supabase
+          .from('profiles')
+          .select('must_change_password')
+          .eq('id', userId)
+          .single(),
+      ]);
 
-      if (error) {
-        console.error('Error fetching role:', error);
+      if (roleResult.error) {
+        console.error('Error fetching role:', roleResult.error);
         setRole(null);
       } else {
-        setRole(data?.role as UserRole);
+        setRole(roleResult.data?.role as UserRole);
+      }
+
+      if (profileResult.error) {
+        console.error('Error fetching profile:', profileResult.error);
+        setMustChangePassword(false);
+      } else {
+        setMustChangePassword(profileResult.data?.must_change_password || false);
       }
     } catch (err) {
-      console.error('Error fetching role:', err);
+      console.error('Error fetching user data:', err);
       setRole(null);
+      setMustChangePassword(false);
     } finally {
       setLoading(false);
     }
@@ -87,10 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setRole(null);
+    setMustChangePassword(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, role, loading, mustChangePassword, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
