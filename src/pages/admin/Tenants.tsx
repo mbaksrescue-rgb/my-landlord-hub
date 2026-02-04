@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useTenants, useUnits } from '@/hooks/useAdminData';
+import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { useUnits } from '@/hooks/useAdminData';
+import { useActivityLog } from '@/hooks/useActivityLog';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/format';
-import { Plus, Pencil, Trash2, Users, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Users, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,6 +46,8 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { EmptyState } from '@/components/ui/empty-state';
 
 interface TenantFormData {
   full_name: string;
@@ -57,8 +61,16 @@ interface TenantFormData {
 }
 
 export default function Tenants() {
-  const { data: tenants, isLoading } = useTenants();
+  const tenantsQuery = usePaginatedQuery<any>({
+    queryKey: ['tenants_paginated'],
+    tableName: 'tenants',
+    select: `*, profile:profiles!tenants_user_id_fkey(full_name, email, phone, national_id, next_of_kin), unit:units(id, unit_number, property:properties(name))`,
+    orderBy: { column: 'created_at', ascending: false },
+    options: { pageSize: 15 },
+  });
+
   const { data: units } = useUnits();
+  const { logActivity } = useActivityLog();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -96,7 +108,6 @@ export default function Tenants() {
     setIsSubmitting(true);
 
     try {
-      // Use edge function to create tenant with admin privileges
       const { data, error } = await supabase.functions.invoke('create-tenant', {
         body: {
           email: formData.email,
@@ -113,8 +124,20 @@ export default function Tenants() {
       if (error) throw error;
       if (!data.success) throw new Error(data.error || 'Failed to create tenant');
 
+      // Log activity
+      await logActivity({
+        action: 'create',
+        entityType: 'tenant',
+        entityId: data.tenant_id,
+        details: { 
+          tenant_name: formData.full_name,
+          email: formData.email,
+          unit_id: formData.unit_id || null,
+        },
+      });
+
       toast.success('Tenant created successfully');
-      queryClient.invalidateQueries({ queryKey: ['tenants'] });
+      queryClient.invalidateQueries({ queryKey: ['tenants_paginated'] });
       queryClient.invalidateQueries({ queryKey: ['units'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       setIsDialogOpen(false);
@@ -130,11 +153,9 @@ export default function Tenants() {
     if (!deleteId) return;
 
     try {
-      // Find the tenant to get the user_id
-      const tenant = tenants?.find((t: any) => t.id === deleteId);
+      const tenant = tenantsQuery.data?.find((t: any) => t.id === deleteId);
       if (!tenant) throw new Error('Tenant not found');
 
-      // Update unit status back to vacant if tenant had a unit
       if (tenant.unit_id) {
         await supabase
           .from('units')
@@ -142,15 +163,18 @@ export default function Tenants() {
           .eq('id', tenant.unit_id);
       }
 
-      // Delete the auth user (this will cascade delete profile, tenant, etc.)
-      const { error } = await supabase.auth.admin.deleteUser(tenant.user_id);
-      if (error) {
-        // If admin delete fails, just delete the tenant record
-        await supabase.from('tenants').delete().eq('id', deleteId);
-      }
+      const { error } = await supabase.from('tenants').delete().eq('id', deleteId);
+      if (error) throw error;
+
+      await logActivity({
+        action: 'delete',
+        entityType: 'tenant',
+        entityId: deleteId,
+        details: { tenant_name: tenant.profile?.full_name },
+      });
 
       toast.success('Tenant deleted successfully');
-      queryClient.invalidateQueries({ queryKey: ['tenants'] });
+      queryClient.invalidateQueries({ queryKey: ['tenants_paginated'] });
       queryClient.invalidateQueries({ queryKey: ['units'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     } catch (error: any) {
@@ -221,6 +245,9 @@ export default function Tenants() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Tenant will be required to change password on first login
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -294,69 +321,82 @@ export default function Tenants() {
 
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
+          {tenantsQuery.isLoading ? (
             <div className="p-6 space-y-4">
               {[...Array(3)].map((_, i) => (
                 <Skeleton key={i} className="h-16" />
               ))}
             </div>
-          ) : tenants?.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <Users className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No tenants yet</p>
-              <Button className="mt-4" onClick={handleOpenDialog}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Your First Tenant
-              </Button>
-            </div>
+          ) : tenantsQuery.data.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No tenants yet"
+              description="Add your first tenant to get started"
+              actionLabel="Add Your First Tenant"
+              onAction={handleOpenDialog}
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>Move-in Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tenants?.map((tenant: any) => (
-                  <TableRow key={tenant.id}>
-                    <TableCell className="font-medium">
-                      {tenant.profile?.full_name || 'N/A'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p>{tenant.profile?.email}</p>
-                        <p className="text-muted-foreground">{tenant.profile?.phone}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {tenant.unit ? (
-                        <Badge variant="secondary">
-                          {tenant.unit.unit_number} - {tenant.unit.property?.name}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">Not assigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {tenant.move_in_date ? formatDate(tenant.move_in_date) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteId(tenant.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Move-in Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {tenantsQuery.data.map((tenant: any) => (
+                    <TableRow key={tenant.id}>
+                      <TableCell className="font-medium">
+                        {tenant.profile?.full_name || 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p>{tenant.profile?.email}</p>
+                          <p className="text-muted-foreground">{tenant.profile?.phone}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {tenant.unit ? (
+                          <Badge variant="secondary">
+                            {tenant.unit.unit_number} - {tenant.unit.property?.name}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">Not assigned</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {tenant.move_in_date ? formatDate(tenant.move_in_date) : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteId(tenant.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <DataTablePagination
+                page={tenantsQuery.page}
+                totalPages={tenantsQuery.totalPages}
+                totalCount={tenantsQuery.totalCount}
+                pageSize={tenantsQuery.pageSize}
+                hasNextPage={tenantsQuery.hasNextPage}
+                hasPrevPage={tenantsQuery.hasPrevPage}
+                onNextPage={tenantsQuery.nextPage}
+                onPrevPage={tenantsQuery.prevPage}
+                onGoToPage={tenantsQuery.goToPage}
+                isFetching={tenantsQuery.isFetching}
+              />
+            </>
           )}
         </CardContent>
       </Card>

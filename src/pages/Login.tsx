@@ -94,9 +94,14 @@ export default function Login() {
               )}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            Contact your administrator if you need access
-          </p>
+          <div className="mt-4 text-center space-y-2">
+            <a href="/forgot-password" className="text-sm text-primary hover:underline">
+              Forgot your password?
+            </a>
+            <p className="text-sm text-muted-foreground">
+              Contact your administrator if you need access
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

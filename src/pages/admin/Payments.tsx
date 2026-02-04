@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRentRecords, usePayments, useTenants, useUnits } from '@/hooks/useAdminData';
+import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { useTenants, useUnits } from '@/hooks/useAdminData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatDate, formatCurrency, formatMonthYear } from '@/lib/format';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Plus, CreditCard, Receipt } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Plus, CreditCard, Receipt, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,6 +39,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 
 const paymentMethods = [
   { value: 'cash', label: 'Cash' },
@@ -61,8 +65,31 @@ interface PaymentFormData {
 }
 
 export default function Payments() {
-  const { data: rentRecords, isLoading: rentLoading } = useRentRecords();
-  const { data: payments, isLoading: paymentsLoading } = usePayments();
+  const rentRecordsQuery = usePaginatedQuery<any>({
+    queryKey: ['rent_records_paginated'],
+    tableName: 'rent_records',
+    select: `*, tenant:tenants(id, profile:profiles!tenants_user_id_fkey(full_name)), unit:units(id, unit_number)`,
+    orderBy: { column: 'due_date', ascending: false },
+    options: { pageSize: 15 },
+  });
+
+  const paymentsQuery = usePaginatedQuery<any>({
+    queryKey: ['payments_paginated'],
+    tableName: 'payments',
+    select: `*, tenant:tenants(id, profile:profiles!tenants_user_id_fkey(full_name)), rent_record:rent_records(month_year, unit:units(unit_number))`,
+    orderBy: { column: 'payment_date', ascending: false },
+    options: { pageSize: 15 },
+  });
+
+  // M-Pesa transactions for reconciliation
+  const mpesaQuery = usePaginatedQuery<any>({
+    queryKey: ['mpesa_transactions'],
+    tableName: 'mpesa_transactions',
+    select: '*',
+    orderBy: { column: 'transaction_date', ascending: false },
+    options: { pageSize: 15 },
+  });
+
   const { data: tenants } = useTenants();
   const { data: units } = useUnits();
   const queryClient = useQueryClient();
@@ -105,7 +132,7 @@ export default function Payments() {
       if (error) throw error;
 
       toast.success('Rent record created successfully');
-      queryClient.invalidateQueries({ queryKey: ['rent_records'] });
+      queryClient.invalidateQueries({ queryKey: ['rent_records_paginated'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       setIsRentDialogOpen(false);
     } catch (error: any) {
@@ -156,8 +183,8 @@ export default function Payments() {
       if (updateError) throw updateError;
 
       toast.success('Payment recorded successfully');
-      queryClient.invalidateQueries({ queryKey: ['rent_records'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['rent_records_paginated'] });
+      queryClient.invalidateQueries({ queryKey: ['payments_paginated'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       setIsPaymentDialogOpen(false);
       setSelectedRentRecord(null);
@@ -190,6 +217,7 @@ export default function Payments() {
         <TabsList>
           <TabsTrigger value="rent-records">Rent Records</TabsTrigger>
           <TabsTrigger value="payments">Payment History</TabsTrigger>
+          <TabsTrigger value="mpesa">M-Pesa Transactions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rent-records">
@@ -292,66 +320,81 @@ export default function Payments() {
 
           <Card>
             <CardContent className="p-0">
-              {rentLoading ? (
+              {rentRecordsQuery.isLoading ? (
                 <div className="p-6 space-y-4">
                   {[...Array(3)].map((_, i) => (
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
-              ) : rentRecords?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <CreditCard className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No rent records yet</p>
-                </div>
+              ) : rentRecordsQuery.data.length === 0 ? (
+                <EmptyState
+                  icon={CreditCard}
+                  title="No rent records yet"
+                  description="Create your first rent record to start tracking payments"
+                />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tenant</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead>Month</TableHead>
-                      <TableHead>Amount Due</TableHead>
-                      <TableHead>Paid</TableHead>
-                      <TableHead>Balance</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rentRecords?.map((record: any) => {
-                      const balance = Number(record.amount_due) - Number(record.amount_paid);
-                      return (
-                        <TableRow key={record.id}>
-                          <TableCell className="font-medium">
-                            {record.tenant?.profile?.full_name || 'N/A'}
-                          </TableCell>
-                          <TableCell>{record.unit?.unit_number}</TableCell>
-                          <TableCell>{formatMonthYear(record.month_year)}</TableCell>
-                          <TableCell>{formatCurrency(record.amount_due)}</TableCell>
-                          <TableCell>{formatCurrency(record.amount_paid)}</TableCell>
-                          <TableCell className={balance > 0 ? 'text-destructive font-medium' : ''}>
-                            {formatCurrency(balance)}
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge status={record.status} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {record.status !== 'paid' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openPaymentDialog(record)}
-                              >
-                                <Receipt className="mr-1 h-3 w-3" />
-                                Record Payment
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead>Month</TableHead>
+                        <TableHead>Amount Due</TableHead>
+                        <TableHead>Paid</TableHead>
+                        <TableHead>Balance</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rentRecordsQuery.data.map((record: any) => {
+                        const balance = Number(record.amount_due) - Number(record.amount_paid);
+                        return (
+                          <TableRow key={record.id}>
+                            <TableCell className="font-medium">
+                              {record.tenant?.profile?.full_name || 'N/A'}
+                            </TableCell>
+                            <TableCell>{record.unit?.unit_number}</TableCell>
+                            <TableCell>{formatMonthYear(record.month_year)}</TableCell>
+                            <TableCell>{formatCurrency(record.amount_due)}</TableCell>
+                            <TableCell>{formatCurrency(record.amount_paid)}</TableCell>
+                            <TableCell className={balance > 0 ? 'text-destructive font-medium' : ''}>
+                              {formatCurrency(balance)}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={record.status} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {record.status !== 'paid' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openPaymentDialog(record)}
+                                >
+                                  <Receipt className="mr-1 h-3 w-3" />
+                                  Record Payment
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  <DataTablePagination
+                    page={rentRecordsQuery.page}
+                    totalPages={rentRecordsQuery.totalPages}
+                    totalCount={rentRecordsQuery.totalCount}
+                    pageSize={rentRecordsQuery.pageSize}
+                    hasNextPage={rentRecordsQuery.hasNextPage}
+                    hasPrevPage={rentRecordsQuery.hasPrevPage}
+                    onNextPage={rentRecordsQuery.nextPage}
+                    onPrevPage={rentRecordsQuery.prevPage}
+                    onGoToPage={rentRecordsQuery.goToPage}
+                    isFetching={rentRecordsQuery.isFetching}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
@@ -363,52 +406,138 @@ export default function Payments() {
               <CardTitle>Payment History</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {paymentsLoading ? (
+              {paymentsQuery.isLoading ? (
                 <div className="p-6 space-y-4">
                   {[...Array(3)].map((_, i) => (
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
-              ) : payments?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No payments recorded yet</p>
-                </div>
+              ) : paymentsQuery.data.length === 0 ? (
+                <EmptyState
+                  icon={Receipt}
+                  title="No payments recorded yet"
+                  description="Payments will appear here once tenants start paying rent"
+                />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Tenant</TableHead>
-                      <TableHead>For Month</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payments?.map((payment: any) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>{formatDate(payment.payment_date)}</TableCell>
-                        <TableCell className="font-medium">
-                          {payment.tenant?.profile?.full_name || 'N/A'}
-                        </TableCell>
-                        <TableCell>
-                          {payment.rent_record?.month_year
-                            ? formatMonthYear(payment.rent_record.month_year)
-                            : 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-success font-medium">
-                          {formatCurrency(payment.amount)}
-                        </TableCell>
-                        <TableCell className="capitalize">
-                          {payment.payment_method.replace('_', ' ')}
-                        </TableCell>
-                        <TableCell>{payment.reference_number || '-'}</TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>For Month</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Reference</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {paymentsQuery.data.map((payment: any) => (
+                        <TableRow key={payment.id}>
+                          <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                          <TableCell className="font-medium">
+                            {payment.tenant?.profile?.full_name || 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            {payment.rent_record?.month_year
+                              ? formatMonthYear(payment.rent_record.month_year)
+                              : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-primary font-medium">
+                            {formatCurrency(payment.amount)}
+                          </TableCell>
+                          <TableCell className="capitalize">
+                            {payment.payment_method.replace('_', ' ')}
+                          </TableCell>
+                          <TableCell>{payment.reference_number || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <DataTablePagination
+                    page={paymentsQuery.page}
+                    totalPages={paymentsQuery.totalPages}
+                    totalCount={paymentsQuery.totalCount}
+                    pageSize={paymentsQuery.pageSize}
+                    hasNextPage={paymentsQuery.hasNextPage}
+                    hasPrevPage={paymentsQuery.hasPrevPage}
+                    onNextPage={paymentsQuery.nextPage}
+                    onPrevPage={paymentsQuery.prevPage}
+                    onGoToPage={paymentsQuery.goToPage}
+                    isFetching={paymentsQuery.isFetching}
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mpesa">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5 text-primary" />
+                M-Pesa Transactions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {mpesaQuery.isLoading ? (
+                <div className="p-6 space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-16" />
+                  ))}
+                </div>
+              ) : mpesaQuery.data.length === 0 ? (
+                <EmptyState
+                  icon={Smartphone}
+                  title="No M-Pesa transactions yet"
+                  description="M-Pesa payments will auto-reconcile when tenants pay using the Paybill number"
+                />
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Transaction ID</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Account (Unit)</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {mpesaQuery.data.map((tx: any) => (
+                        <TableRow key={tx.id}>
+                          <TableCell>{formatDate(tx.transaction_date)}</TableCell>
+                          <TableCell className="font-mono text-sm">{tx.transaction_id}</TableCell>
+                          <TableCell>{tx.phone_number}</TableCell>
+                          <TableCell>{tx.account_number}</TableCell>
+                          <TableCell className="text-primary font-medium">
+                            {formatCurrency(tx.amount)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={tx.matched ? 'default' : 'destructive'}>
+                              {tx.matched ? 'Matched' : 'Pending Review'}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <DataTablePagination
+                    page={mpesaQuery.page}
+                    totalPages={mpesaQuery.totalPages}
+                    totalCount={mpesaQuery.totalCount}
+                    pageSize={mpesaQuery.pageSize}
+                    hasNextPage={mpesaQuery.hasNextPage}
+                    hasPrevPage={mpesaQuery.hasPrevPage}
+                    onNextPage={mpesaQuery.nextPage}
+                    onPrevPage={mpesaQuery.prevPage}
+                    onGoToPage={mpesaQuery.goToPage}
+                    isFetching={mpesaQuery.isFetching}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
@@ -469,19 +598,20 @@ export default function Payments() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Reference Number (Optional)</Label>
+                <Label>Reference Number</Label>
                 <Input
                   value={paymentFormData.reference_number}
                   onChange={(e) => setPaymentFormData({ ...paymentFormData, reference_number: e.target.value })}
-                  placeholder="e.g., M-Pesa transaction code"
+                  placeholder="M-Pesa code, receipt number, etc."
                 />
               </div>
               <div className="space-y-2">
-                <Label>Notes (Optional)</Label>
+                <Label>Notes</Label>
                 <Textarea
                   value={paymentFormData.notes}
                   onChange={(e) => setPaymentFormData({ ...paymentFormData, notes: e.target.value })}
-                  placeholder="Any additional notes..."
+                  placeholder="Optional notes"
+                  rows={2}
                 />
               </div>
               <div className="flex justify-end gap-2">
